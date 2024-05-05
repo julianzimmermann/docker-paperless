@@ -1,0 +1,73 @@
+version: "3.9"
+services:
+  broker:
+    image: docker.io/library/redis:7
+    container_name: paperless_broker
+    restart: unless-stopped
+    volumes:
+      - /mnt/docker/paperless/redis:/data
+    networks:
+      paperless:
+
+  db:
+    image: docker.io/library/postgres:15
+    restart: unless-stopped
+    container_name: paperless_db
+    volumes:
+      - /mnt/docker/paperless/db:/var/lib/postgresql/data
+    env_file: stack.env
+    networks:
+      paperless:
+
+  webserver:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    container_name: paperless_web
+    ports:
+      - 8888:8000
+    depends_on:
+      - db
+      - broker
+      - gotenberg
+      - tika
+    volumes:
+      - /mnt/docker/paperless/data:/usr/src/paperless/data
+      - /mnt/docker/paperless/media:/usr/src/paperless/media
+      - /mnt/docker/paperless/export:/usr/src/paperless/export
+      - /mnt/docker/paperless/consume:/usr/src/paperless/consume
+    env_file: stack.env
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_DBHOST: db
+      PAPERLESS_TIKA_ENABLED: 1
+      PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://gotenberg:3000
+      PAPERLESS_TIKA_ENDPOINT: http://tika:9998
+    networks:
+      fritzbox-macvlan:
+        ipv4_address: 192.168.178.61
+      paperless:
+
+  gotenberg:
+    image: docker.io/gotenberg/gotenberg:7.10
+    restart: unless-stopped
+    container_name: paperless_gotenberg
+    command:
+      - "gotenberg"
+      - "--chromium-disable-javascript=true"
+      - "--chromium-allow-list=file:///tmp/.*"
+    networks:
+      paperless:
+
+  tika:
+    image: ghcr.io/paperless-ngx/tika:latest
+    restart: unless-stopped
+    container_name: paperless_tika
+    networks:
+      paperless:
+
+networks:
+  fritzbox-macvlan:
+    external: true
+    name: fritzbox-macvlan
+  paperless:
+    name: paperless-internal-network
